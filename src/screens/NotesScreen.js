@@ -9,39 +9,32 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
-  Platform, 
+  Platform,
 } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { useNotes } from '../hooks/useNotes';
+import { useAuth } from '../hooks/useAuth';
+import { COLORS } from '../constants/colors';
+import { FONT_SIZE, FONT_WEIGHT } from '../constants/typography';
+
+function showMessage(title, message) {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+}
 
 export default function NotesScreen({ navigation }) {
-  const [notes, setNotes] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { notes, loading, error, addNote, editNote, removeNote } = useNotes();
+  const { logout } = useAuth();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
 
-  // Load data saat screen dibuka
   useEffect(() => {
-    fetchNotes();
-  }, []);
-
-  async function fetchNotes() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('notes')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-      
-
-    if (error) {
-      Alert.alert('Error', 'Gagal memuat catatan: ' + error.message);
-    } else {
-      setNotes(data);
-    }
-    setLoading(false);
-  }
+    if (error) showMessage('Error', error);
+  }, [error]);
 
   function openAddModal() {
     setEditingNote(null);
@@ -59,69 +52,29 @@ export default function NotesScreen({ navigation }) {
 
   async function handleSave() {
     if (!title.trim()) {
-      Alert.alert('Error', 'Judul tidak boleh kosong');
+      showMessage('Error', 'Judul tidak boleh kosong');
       return;
     }
-
-    if (editingNote) {
-      // Update catatan yang sudah ada
-      const { error } = await supabase
-        .from('notes')
-        .update({ title, content })
-        .eq('id', editingNote.id);
-
-      if (error) {
-        Alert.alert('Error', 'Gagal update catatan: ' + error.message);
-        return;
-      }
-    } else {
-      // Insert catatan baru
-      const { data: userData } = await supabase.auth.getUser();
-      const { error } = await supabase.from('notes').insert({
-        title,
-        content,
-        user_id: userData.user.id,
-      });
-
-      if (error) {
-        Alert.alert('Error', 'Gagal menambah catatan: ' + error.message);
-        return;
-      }
-    }
-
-    setModalVisible(false);
-    fetchNotes();
+    const ok = editingNote
+      ? await editNote(editingNote.id, { title, content })
+      : await addNote({ title, content });
+    if (ok) setModalVisible(false);
   }
 
-
-
-async function handleDelete(id) {
-  const confirmDelete = async () => {
-    const { error } = await supabase.from('notes').delete().eq('id', id);
-    if (error) {
-      Alert.alert('Error', 'Gagal menghapus catatan: ' + error.message);
+  function handleDelete(id) {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Yakin ingin menghapus catatan ini?')) removeNote(id);
     } else {
-      fetchNotes();
+      Alert.alert('Hapus Catatan', 'Yakin ingin menghapus catatan ini?', [
+        { text: 'Batal', style: 'cancel' },
+        { text: 'Hapus', style: 'destructive', onPress: () => removeNote(id) },
+      ]);
     }
-  };
-
-  if (Platform.OS === 'web') {
-    // Web: pakai confirm() bawaan browser
-    if (window.confirm('Yakin ingin menghapus catatan ini?')) {
-      confirmDelete();
-    }
-  } else {
-    // Mobile: pakai Alert.alert seperti biasa
-    Alert.alert('Hapus Catatan', 'Yakin ingin menghapus catatan ini?', [
-      { text: 'Batal', style: 'cancel' },
-      { text: 'Hapus', style: 'destructive', onPress: confirmDelete },
-    ]);
   }
-}
 
   async function handleLogout() {
-    await supabase.auth.signOut();
-    navigation.replace('Login');
+    const ok = await logout();
+    if (ok) navigation.replace('Login');
   }
 
   if (loading) {
@@ -134,9 +87,14 @@ async function handleDelete(id) {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
+      <View style={styles.topBar}>
+  <TouchableOpacity onPress={() => navigation.navigate('Todo')}>
+    <Text style={styles.link}>To-Do</Text>
+  </TouchableOpacity>
+  <TouchableOpacity onPress={handleLogout}>
+    <Text style={styles.logoutText}>Logout</Text>
+  </TouchableOpacity>
+</View>
 
       <FlatList
         data={notes}
@@ -213,31 +171,43 @@ async function handleDelete(id) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 16 },
+  container: { flex: 1, backgroundColor: COLORS.white, padding: 16 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  logoutButton: {
-    alignSelf: 'flex-end',
-    marginBottom: 12,
+
+topBar: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  marginBottom: 12,
+},
+link: {
+  color: COLORS.primary,
+  fontWeight: FONT_WEIGHT.semibold,
+  fontSize: FONT_SIZE.md,
+},
+
+  logoutText: {
+    color: COLORS.danger,
+    fontWeight: FONT_WEIGHT.semibold,
+    fontSize: FONT_SIZE.md,
   },
-  logoutText: { color: '#ef4444', fontWeight: '600', fontSize: 14 },
-  emptyText: { textAlign: 'center', marginTop: 40, color: '#888' },
+  emptyText: { textAlign: 'center', marginTop: 40, color: COLORS.muted },
   noteItem: {
     flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
+    backgroundColor: COLORS.surface,
     padding: 14,
     borderRadius: 10,
     marginBottom: 10,
     alignItems: 'center',
   },
-  noteTitle: { fontSize: 16, fontWeight: '600' },
-  noteContent: { fontSize: 13, color: '#555', marginTop: 4 },
+  noteTitle: { fontSize: FONT_SIZE.lg, fontWeight: FONT_WEIGHT.semibold },
+  noteContent: { fontSize: FONT_SIZE.sm, color: COLORS.textSoft, marginTop: 4 },
   deleteButton: { paddingHorizontal: 10, paddingVertical: 6 },
-  deleteText: { color: '#ef4444', fontWeight: '600' },
+  deleteText: { color: COLORS.danger, fontWeight: FONT_WEIGHT.semibold },
   fab: {
     position: 'absolute',
     right: 20,
     bottom: 30,
-    backgroundColor: '#ec4899',
+    backgroundColor: COLORS.primary,
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -245,26 +215,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     elevation: 4,
   },
-  fabText: { color: '#fff', fontSize: 28, lineHeight: 28 },
+  fabText: { color: COLORS.white, fontSize: FONT_SIZE.fab, lineHeight: FONT_SIZE.fab },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: COLORS.overlay,
     justifyContent: 'center',
     padding: 20,
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
     borderRadius: 12,
     padding: 20,
   },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 14 },
+  modalTitle: { fontSize: FONT_SIZE.xl, fontWeight: FONT_WEIGHT.bold, marginBottom: 14 },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: COLORS.border,
     borderRadius: 8,
     padding: 10,
     marginBottom: 12,
-    fontSize: 15,
+    fontSize: FONT_SIZE.base,
   },
   modalButtons: { flexDirection: 'row', justifyContent: 'flex-end' },
   modalButton: {
@@ -273,7 +243,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginLeft: 10,
   },
-  cancelButton: { backgroundColor: '#94a3b8' },
-  saveButton: { backgroundColor: '#ec4899' },
-  modalButtonText: { color: '#fff', fontWeight: '600' },
+  cancelButton: { backgroundColor: COLORS.neutralBtn },
+  saveButton: { backgroundColor: COLORS.primary },
+  modalButtonText: { color: COLORS.white, fontWeight: FONT_WEIGHT.semibold },
 });

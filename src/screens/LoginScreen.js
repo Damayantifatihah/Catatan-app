@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,56 +6,48 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
+  Platform,
   ActivityIndicator,
 } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
+import { COLORS } from '../constants/colors';
+import { FONT_SIZE, FONT_WEIGHT } from '../constants/typography';
+
+function showMessage(title, message) {
+  if (Platform.OS === 'web') {
+    window.alert(`${title}\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+}
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const { login, register, loading, error } = useAuth();
+
+  useEffect(() => {
+    if (error) showMessage('Error', error);
+  }, [error]);
 
   async function handleLogin() {
     if (!email || !password) {
-      Alert.alert('Error', 'Email dan password harus diisi');
+      showMessage('Error', 'Email dan password harus diisi');
       return;
     }
-    setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    setLoading(false);
-
-    if (error) {
-      Alert.alert('Login Gagal', error.message);
-      return;
-    }
-    navigation.replace('Notes');
+    const ok = await login(email, password);
+    if (ok) navigation.replace('Notes');
   }
 
   async function handleSignUp() {
     if (!email || !password) {
-      Alert.alert('Error', 'Email dan password harus diisi');
+      showMessage('Error', 'Email dan password harus diisi');
       return;
     }
-    setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-    setLoading(false);
-
-    if (error) {
-      Alert.alert('Sign Up Gagal', error.message);
-      return;
-    }
-    Alert.alert(
-      'Sign Up Berhasil',
-      'Silakan cek email untuk verifikasi (jika diaktifkan), atau langsung login.'
-    );
+    const ok = await register(email, password);
+    if (ok) showMessage('Sign Up Berhasil', 'Silakan login.');
   }
-
+  
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Catatan Sederhana</Text>
@@ -102,35 +94,35 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 24,
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
   },
   title: {
-    fontSize: 26,
-    fontWeight: 'bold',
+    fontSize: FONT_SIZE.title,
+    fontWeight: FONT_WEIGHT.bold,
     marginBottom: 30,
     textAlign: 'center',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: COLORS.border,
     borderRadius: 8,
     padding: 12,
     marginBottom: 14,
-    fontSize: 16,
+    fontSize: FONT_SIZE.lg,
   },
   button: {
-    backgroundColor: '#ec4899',
+    backgroundColor: COLORS.primary,
     padding: 14,
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 10,
   },
   buttonSecondary: {
-    backgroundColor: '#64748b',
+    backgroundColor: COLORS.secondary,
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    color: COLORS.white,
+    fontSize: FONT_SIZE.lg,
+    fontWeight: FONT_WEIGHT.semibold,
   },
 });
